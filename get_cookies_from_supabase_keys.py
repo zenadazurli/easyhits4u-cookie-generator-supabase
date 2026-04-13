@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-# get_cookies_from_supabase_keys.py - Genera cookie usando chiavi Browserless prese da Supabase
+# get_cookies_from_supabase_keys.py - Usa due progetti Supabase distinti
 
 import requests
 import time
 from datetime import datetime
 from supabase import create_client
 
-# ==================== CONFIGURAZIONE ====================
-SUPABASE_URL = "https://ofijopixtpwahgbwyutc.supabase.co"
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9maWpvcGl4dHB3YWhnYnd5dXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkyODIxMiwiZXhwIjoyMDkxNTA0MjEyfQ.BkWb8EuUUJSUUgg3sepDmOdUzsXY7pjGjykQnPMK9q4"   # <-- SOSTITUISCI CON LA TUA SERVICE KEY
+# ==================== CONFIGURAZIONE DUE PROGETTI ====================
+# Progetto 1: dove risiedono le chiavi Browserless (tabella browserless_keys)
+SUPABASE_KEYS_URL = "https://lmtmjfrhzbjtayjwcpsq.supabase.co"
+SUPABASE_KEYS_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtdG1qZnJoemJqdGF5andjcHNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEyNDc4MCwiZXhwIjoyMDkwNzAwNzgwfQ.2mPQPwTlCK0JHbX27cOM8b_Sbu9KRtBXMVbOh46_o1o"   # <-- SOSTITUISCI
+
+# Progetto 2: dove salvare i cookie (tabella account_cookies)
+SUPABASE_COOKIES_URL = "https://ofijopixtpwahgbwyutc.supabase.co"
+SUPABASE_COOKIES_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9maWpvcGl4dHB3YWhnYnd5dXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkyODIxMiwiZXhwIjoyMDkxNTA0MjEyfQ.BkWb8EuUUJSUUgg3sepDmOdUzsXY7pjGjykQnPMK9q4"   # <-- SOSTITUISCI
 
 ACCOUNT_NAME = "main"
 EASYHITS_EMAIL = "sandrominori50+uiszuzoqatr@gmail.com"
@@ -97,22 +102,24 @@ def login_and_get_cookies(api_key):
 
 def main():
     log("=" * 50)
-    log("🚀 GENERATORE COOKIE (CHIAVI DA SUPABASE)")
+    log("🚀 GENERATORE COOKIE (CHIAVI DA SUPABASE PROGETTO KEYS)")
     log("=" * 50)
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    # 1. Prendi le chiavi Browserless con status 'working'
-    keys_resp = supabase.table('browserless_keys')\
+    # Client per leggere le chiavi Browserless
+    supabase_keys = create_client(SUPABASE_KEYS_URL, SUPABASE_KEYS_SERVICE_KEY)
+    keys_resp = supabase_keys.table('browserless_keys')\
         .select('id', 'api_key')\
         .eq('status', 'working')\
         .execute()
     if not keys_resp.data:
-        log("❌ Nessuna chiave 'working' trovata nella tabella browserless_keys")
+        log("❌ Nessuna chiave 'working' trovata nella tabella browserless_keys (progetto keys)")
         return
     keys = keys_resp.data
     log(f"🔑 Trovate {len(keys)} chiavi 'working'")
 
-    # 2. Prova ciascuna chiave finché non funziona
+    # Client per scrivere i cookie
+    supabase_cookies = create_client(SUPABASE_COOKIES_URL, SUPABASE_COOKIES_SERVICE_KEY)
+
     for key_record in keys:
         key_id = key_record['id']
         api_key = key_record['api_key']
@@ -121,8 +128,7 @@ def main():
         if result:
             cookie_string, uid, sid = result
             log(f"🎉 Cookie ottenuti! user_id={uid}, sesids={sid}")
-            # Aggiorna la tabella account_cookies
-            supabase.table('account_cookies').upsert({
+            supabase_cookies.table('account_cookies').upsert({
                 'account_name': ACCOUNT_NAME,
                 'cookie_string': cookie_string,
                 'user_id': uid,
@@ -130,16 +136,16 @@ def main():
                 'status': 'active',
                 'updated_at': datetime.now().isoformat()
             }, on_conflict='account_name').execute()
-            log("✅ Cookie salvati su Supabase")
-            # Opzionale: segna la chiave come 'used' per evitare di riutilizzarla subito
-            supabase.table('browserless_keys')\
+            log("✅ Cookie salvati su Supabase (progetto cookies)")
+            # Opzionale: segna la chiave come 'used' nel progetto keys
+            supabase_keys.table('browserless_keys')\
                 .update({'status': 'used'})\
                 .eq('id', key_id)\
                 .execute()
             return
         else:
             log(f"   ❌ Fallito, marco chiave come 'broken'")
-            supabase.table('browserless_keys')\
+            supabase_keys.table('browserless_keys')\
                 .update({'status': 'broken'})\
                 .eq('id', key_id)\
                 .execute()
