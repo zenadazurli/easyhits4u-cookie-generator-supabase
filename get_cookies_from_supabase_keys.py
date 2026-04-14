@@ -9,7 +9,7 @@ from supabase import create_client
 
 # ==================== CONFIGURAZIONE ====================
 SUPABASE_KEYS_URL = "https://lmtmjfrhzbjtayjwcpsq.supabase.co"
-SUPABASE_KEYS_SERVICE_KEY = "la_tua_service_key"
+SUPABASE_KEYS_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtdG1qZnJoemJqdGF5andjcHNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEyNDc4MCwiZXhwIjoyMDkwNzAwNzgwfQ.2mPQPwTlCK0JHbX27cOM8b_Sbu9KRtBXMVbOh46_o1o"
 
 SUPABASE_COOKIES_URL = "https://ofijopixtpwahgbwyutc.supabase.co"
 SUPABASE_COOKIES_SERVICE_KEY = "la_tua_service_key_cookies"
