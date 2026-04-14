@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# get_cookies_from_supabase_keys.py - Con pulizia delle chiavi
+# get_cookies_from_supabase_keys.py - Con log dettagliati delle chiavi
 
 import re
 import requests
@@ -14,6 +14,7 @@ SUPABASE_KEYS_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdX
 SUPABASE_COOKIES_URL = "https://ofijopixtpwahgbwyutc.supabase.co"
 SUPABASE_COOKIES_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9maWpvcGl4dHB3YWhnYnd5dXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkyODIxMiwiZXhwIjoyMDkxNTA0MjEyfQ.BkWb8EuUUJSUUgg3sepDmOdUzsXY7pjGjykQnPMK9q4"
 
+
 ACCOUNT_NAME = "main"
 EASYHITS_EMAIL = "sandrominori50+uiszuzoqatr@gmail.com"
 EASYHITS_PASSWORD = "DDnmVV45!!"
@@ -24,9 +25,7 @@ def clean_key(api_key):
     """Pulisce la chiave: rimuove spazi, newline, caratteri invisibili"""
     if not api_key:
         return None
-    # Rimuove spazi, tab, newline, carriage return
     cleaned = re.sub(r'[\s\r\n\t]', '', str(api_key))
-    # Se la chiave sembra valida (inizia con 2U e ha almeno 40 caratteri)
     if cleaned.startswith('2U') and len(cleaned) >= 40:
         return cleaned
     return None
@@ -111,53 +110,97 @@ def login_and_get_cookies(api_key):
     return None
 
 def main():
-    log("=" * 50)
-    log("🚀 GENERATORE COOKIE (CHIAVI DA SUPABASE CON PULIZIA)")
-    log("=" * 50)
+    log("=" * 60)
+    log("🚀 GENERATORE COOKIE - LOG DETTAGLIATO")
+    log("=" * 60)
 
-    supabase_keys = create_client(SUPABASE_KEYS_URL, SUPABASE_KEYS_SERVICE_KEY)
-    supabase_cookies = create_client(SUPABASE_COOKIES_URL, SUPABASE_COOKIES_SERVICE_KEY)
+    # Connessione a Supabase (progetto chiavi)
+    log("📡 Connessione a Supabase (progetto keys)...")
+    try:
+        supabase_keys = create_client(SUPABASE_KEYS_URL, SUPABASE_KEYS_SERVICE_KEY)
+        log("✅ Connessione riuscita")
+    except Exception as e:
+        log(f"❌ Errore connessione a Supabase keys: {e}")
+        return
 
-    # Prendi le chiavi con status 'working' (o 'untested')
+    # Verifica la tabella browserless_keys
+    log("📊 Verifico tabella 'browserless_keys'...")
+    try:
+        # Prova a leggere una riga qualsiasi
+        test_resp = supabase_keys.table('browserless_keys').select('count').limit(1).execute()
+        log(f"✅ Tabella accessibile. Count: {test_resp.count if hasattr(test_resp, 'count') else 'N/A'}")
+    except Exception as e:
+        log(f"❌ Errore accesso tabella: {e}")
+        return
+
+    # Prendi TUTTE le chiavi (senza filtro status per debug)
+    log("🔍 Cerco TUTTE le chiavi (senza filtro status)...")
     resp = supabase_keys.table('browserless_keys')\
         .select('id', 'api_key', 'status')\
-        .in_('status', ['working', 'untested'])\
         .execute()
     
-    keys = resp.data
-    if not keys:
-        log("❌ Nessuna chiave 'working' o 'untested' trovata")
+    all_keys = resp.data
+    log(f"📋 Trovate {len(all_keys)} chiavi TOTALI nel database")
+    
+    if not all_keys:
+        log("❌ Nessuna chiave trovata nel database!")
+        log("   Verifica che la tabella 'browserless_keys' contenga dati.")
         return
     
-    log(f"🔑 Trovate {len(keys)} chiavi. Pulizia in corso...")
+    # Mostra le prime 10 chiavi (con status)
+    log("\n📋 PRIME 10 CHIAVI (ID, status, key[:20]):")
+    for i, k in enumerate(all_keys[:10]):
+        log(f"   {i+1}. ID={k['id']}, status='{k['status']}', key={k['api_key'][:20]}...")
     
-    valid_keys = []
-    for k in keys:
-        cleaned = clean_key(k['api_key'])
+    # Conta per status
+    status_count = {}
+    for k in all_keys:
+        s = k.get('status', 'unknown')
+        status_count[s] = status_count.get(s, 0) + 1
+    log(f"\n📊 STATISTICHE PER STATUS:")
+    for s, count in status_count.items():
+        log(f"   {s}: {count}")
+    
+    # Filtra chiavi con status 'working' o 'untested'
+    working_untested = [k for k in all_keys if k.get('status') in ['working', 'untested']]
+    log(f"\n🔑 Chiavi con status 'working' o 'untested': {len(working_untested)}")
+    
+    if not working_untested:
+        log("❌ Nessuna chiave 'working' o 'untested' trovata!")
+        log("   Esegui prima il tester avanzato per aggiornare gli status.")
+        return
+    
+    # Pulisci e testa le chiavi
+    log("\n🔧 Pulizia e test delle chiavi...")
+    for key_record in working_untested[:10]:  # Test solo prime 10 per velocità
+        key_id = key_record['id']
+        raw_key = key_record['api_key']
+        old_status = key_record['status']
+        
+        log(f"\n🔑 ID={key_id}, status={old_status}")
+        log(f"   Raw key: '{raw_key}' (len={len(raw_key)})")
+        
+        cleaned = clean_key(raw_key)
         if cleaned:
-            if cleaned != k['api_key']:
-                log(f"   🧹 Pulita chiave {k['api_key'][:10]}... -> {cleaned[:10]}...")
-                # Aggiorna la chiave pulita nel database
+            log(f"   Cleaned: '{cleaned[:20]}...' (len={len(cleaned)})")
+            if cleaned != raw_key:
+                log(f"   ⚠️ CHIAVE MODIFICATA! Aggiorno database...")
                 supabase_keys.table('browserless_keys')\
                     .update({'api_key': cleaned})\
-                    .eq('id', k['id'])\
+                    .eq('id', key_id)\
                     .execute()
-            valid_keys.append((k['id'], cleaned))
         else:
-            log(f"   ⚠️ Chiave non valida (scartata): {k['api_key'][:20]}...")
-            supabase_keys.table('browserless_keys')\
-                .update({'status': 'invalid_format'})\
-                .eq('id', k['id'])\
-                .execute()
-    
-    log(f"🔑 Chiavi valide dopo pulizia: {len(valid_keys)}")
-    
-    for key_id, api_key in valid_keys:
-        log(f"🔑 Tentativo con chiave: {api_key[:10]}...")
-        result = login_and_get_cookies(api_key)
+            log(f"   ❌ Chiave non valida dopo pulizia!")
+            continue
+        
+        # Testa la chiave
+        log(f"   🔍 Test login con questa chiave...")
+        result = login_and_get_cookies(cleaned)
         if result:
             cookie_string, uid, sid = result
-            log(f"🎉 Cookie ottenuti! user_id={uid}, sesids={sid}")
+            log(f"   🎉 SUCCESSO! Cookie ottenuti per chiave {cleaned[:10]}...")
+            # Salva su Supabase (progetto cookies)
+            supabase_cookies = create_client(SUPABASE_COOKIES_URL, SUPABASE_COOKIES_SERVICE_KEY)
             supabase_cookies.table('account_cookies').upsert({
                 'account_name': ACCOUNT_NAME,
                 'cookie_string': cookie_string,
@@ -166,21 +209,13 @@ def main():
                 'status': 'active',
                 'updated_at': datetime.now().isoformat()
             }, on_conflict='account_name').execute()
-            log("✅ Cookie salvati su Supabase")
-            # Opzionale: segna la chiave come 'used'
-            supabase_keys.table('browserless_keys')\
-                .update({'status': 'used', 'last_used': datetime.now().isoformat()})\
-                .eq('id', key_id)\
-                .execute()
+            log("   ✅ Cookie salvati su Supabase")
             return
         else:
-            log(f"   ❌ Fallito, marco chiave come 'broken'")
-            supabase_keys.table('browserless_keys')\
-                .update({'status': 'broken', 'last_tested': datetime.now().isoformat()})\
-                .eq('id', key_id)\
-                .execute()
+            log(f"   ❌ Login fallito per questa chiave")
     
-    log("❌ Nessuna chiave funzionante, impossibile generare cookie")
+    log("\n❌ Nessuna chiave funzionante tra le prime 10 testate")
+    log("   Se vuoi testare TUTTE le chiavi, modifica il limite nel codice.")
 
 if __name__ == "__main__":
     main()
