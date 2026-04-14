@@ -1,25 +1,35 @@
 #!/usr/bin/env python3
-# get_cookies_from_supabase_keys.py - Usa due progetti Supabase distinti
+# get_cookies_from_supabase_keys.py - Con pulizia delle chiavi
 
+import re
 import requests
 import time
 from datetime import datetime
 from supabase import create_client
 
-# ==================== CONFIGURAZIONE DUE PROGETTI ====================
-# Progetto 1: dove risiedono le chiavi Browserless (tabella browserless_keys)
+# ==================== CONFIGURAZIONE ====================
 SUPABASE_KEYS_URL = "https://lmtmjfrhzbjtayjwcpsq.supabase.co"
-SUPABASE_KEYS_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxtdG1qZnJoemJqdGF5andjcHNxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEyNDc4MCwiZXhwIjoyMDkwNzAwNzgwfQ.2mPQPwTlCK0JHbX27cOM8b_Sbu9KRtBXMVbOh46_o1o"   # <-- SOSTITUISCI
+SUPABASE_KEYS_SERVICE_KEY = "la_tua_service_key"
 
-# Progetto 2: dove salvare i cookie (tabella account_cookies)
 SUPABASE_COOKIES_URL = "https://ofijopixtpwahgbwyutc.supabase.co"
-SUPABASE_COOKIES_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9maWpvcGl4dHB3YWhnYnd5dXRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTkyODIxMiwiZXhwIjoyMDkxNTA0MjEyfQ.BkWb8EuUUJSUUgg3sepDmOdUzsXY7pjGjykQnPMK9q4"   # <-- SOSTITUISCI
+SUPABASE_COOKIES_SERVICE_KEY = "la_tua_service_key_cookies"
 
 ACCOUNT_NAME = "main"
 EASYHITS_EMAIL = "sandrominori50+uiszuzoqatr@gmail.com"
 EASYHITS_PASSWORD = "DDnmVV45!!"
 REFERER_URL = "https://www.easyhits4u.com/?ref=nicolacaporale"
 BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
+
+def clean_key(api_key):
+    """Pulisce la chiave: rimuove spazi, newline, caratteri invisibili"""
+    if not api_key:
+        return None
+    # Rimuove spazi, tab, newline, carriage return
+    cleaned = re.sub(r'[\s\r\n\t]', '', str(api_key))
+    # Se la chiave sembra valida (inizia con 2U e ha almeno 40 caratteri)
+    if cleaned.startswith('2U') and len(cleaned) >= 40:
+        return cleaned
+    return None
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
@@ -102,27 +112,47 @@ def login_and_get_cookies(api_key):
 
 def main():
     log("=" * 50)
-    log("🚀 GENERATORE COOKIE (CHIAVI DA SUPABASE PROGETTO KEYS)")
+    log("🚀 GENERATORE COOKIE (CHIAVI DA SUPABASE CON PULIZIA)")
     log("=" * 50)
 
-    # Client per leggere le chiavi Browserless
     supabase_keys = create_client(SUPABASE_KEYS_URL, SUPABASE_KEYS_SERVICE_KEY)
-    keys_resp = supabase_keys.table('browserless_keys')\
-        .select('id', 'api_key')\
-        .eq('status', 'working')\
-        .execute()
-    if not keys_resp.data:
-        log("❌ Nessuna chiave 'working' trovata nella tabella browserless_keys (progetto keys)")
-        return
-    keys = keys_resp.data
-    log(f"🔑 Trovate {len(keys)} chiavi 'working'")
-
-    # Client per scrivere i cookie
     supabase_cookies = create_client(SUPABASE_COOKIES_URL, SUPABASE_COOKIES_SERVICE_KEY)
 
-    for key_record in keys:
-        key_id = key_record['id']
-        api_key = key_record['api_key']
+    # Prendi le chiavi con status 'working' (o 'untested')
+    resp = supabase_keys.table('browserless_keys')\
+        .select('id', 'api_key', 'status')\
+        .in_('status', ['working', 'untested'])\
+        .execute()
+    
+    keys = resp.data
+    if not keys:
+        log("❌ Nessuna chiave 'working' o 'untested' trovata")
+        return
+    
+    log(f"🔑 Trovate {len(keys)} chiavi. Pulizia in corso...")
+    
+    valid_keys = []
+    for k in keys:
+        cleaned = clean_key(k['api_key'])
+        if cleaned:
+            if cleaned != k['api_key']:
+                log(f"   🧹 Pulita chiave {k['api_key'][:10]}... -> {cleaned[:10]}...")
+                # Aggiorna la chiave pulita nel database
+                supabase_keys.table('browserless_keys')\
+                    .update({'api_key': cleaned})\
+                    .eq('id', k['id'])\
+                    .execute()
+            valid_keys.append((k['id'], cleaned))
+        else:
+            log(f"   ⚠️ Chiave non valida (scartata): {k['api_key'][:20]}...")
+            supabase_keys.table('browserless_keys')\
+                .update({'status': 'invalid_format'})\
+                .eq('id', k['id'])\
+                .execute()
+    
+    log(f"🔑 Chiavi valide dopo pulizia: {len(valid_keys)}")
+    
+    for key_id, api_key in valid_keys:
         log(f"🔑 Tentativo con chiave: {api_key[:10]}...")
         result = login_and_get_cookies(api_key)
         if result:
@@ -136,19 +166,20 @@ def main():
                 'status': 'active',
                 'updated_at': datetime.now().isoformat()
             }, on_conflict='account_name').execute()
-            log("✅ Cookie salvati su Supabase (progetto cookies)")
-            # Opzionale: segna la chiave come 'used' nel progetto keys
+            log("✅ Cookie salvati su Supabase")
+            # Opzionale: segna la chiave come 'used'
             supabase_keys.table('browserless_keys')\
-                .update({'status': 'used'})\
+                .update({'status': 'used', 'last_used': datetime.now().isoformat()})\
                 .eq('id', key_id)\
                 .execute()
             return
         else:
             log(f"   ❌ Fallito, marco chiave come 'broken'")
             supabase_keys.table('browserless_keys')\
-                .update({'status': 'broken'})\
+                .update({'status': 'broken', 'last_tested': datetime.now().isoformat()})\
                 .eq('id', key_id)\
                 .execute()
+    
     log("❌ Nessuna chiave funzionante, impossibile generare cookie")
 
 if __name__ == "__main__":
